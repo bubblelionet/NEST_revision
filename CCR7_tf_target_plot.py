@@ -55,7 +55,13 @@ valid_tfs = [tf for tf in ccr7_tfs if tf in adata.var_names]
 adata.obs['CCR7_TF_sum'] = adata[:, valid_tfs].X.sum(axis=1)
 
 # Plot the summed expression of CCR7 target TFs
-sc.pl.spatial(adata, color='CCR7_TF_sum', title="Summed Expression of CCR7 Target TFs", cmap="viridis")
+sc.pl.spatial(adata, color='CCR7_TF_sum', title="Summed Expression of CCR7 Downstream Targets", cmap="magma", show=False,img_key=None)
+# Get the current figure and axis
+fig = plt.gcf()
+ax = plt.gca()
+# Set the background color to dark gray
+ax.set_facecolor('darkgray')
+
 plt.savefig("/cluster/projects/schwartzgroup/vg/spots_locations.png",dpi=300)
 
 
