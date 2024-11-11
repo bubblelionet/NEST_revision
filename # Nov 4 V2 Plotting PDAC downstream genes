@@ -1,0 +1,89 @@
+# Plotting RPSA downstream genes and tf genes
+# Run this on H4H
+# Using Deisha's database
+
+import pandas as pd
+import json
+import scanpy as sc
+import anndata
+from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np 
+
+PPI_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/signaling_network_human_21122021_stringdb_scored.csv')
+# load anndata
+adata_path='/cluster/projects/schwartzgroup/vg/PDAC_140694_outs/filtered_feature_bc_matrix/'
+adata = sc.read_10x_mtx(adata_path, var_names='gene_symbols', make_unique=True)
+sc.pp.normalize_total(adata, target_sum=1e4)
+sc.pp.log1p(adata)
+
+positions = pd.read_csv("/cluster/projects/schwartzgroup/vg/PDAC_140694_outs/spatial/tissue_positions_list.csv", header=None)
+positions.columns = ["barcode", "col1", "col2", "col3", "x", "y"]  # Rename columns as needed
+positions.set_index("barcode", inplace=True)
+positions = positions.reindex(adata.obs_names)
+adata.obsm['spatial'] = positions[["x", "y"]].values
+adata.obsm['spatial'] = adata.obsm['spatial'][:, [1, 0]] # Flip the x and y coordinates to match the NEST paper plotting
+
+
+
+########## For RPSA
+# RPSA downstream genes
+RPSA_immediate_downstream_genes_with_scores = PPI_matrix[PPI_matrix['source'] == 'RPSA'][['target', 'experimental_score']].values.tolist()
+RPSA_immediate_downstream_genes_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+top_20_percent_index = int(len(RPSA_immediate_downstream_genes_with_scores) * 0.2)
+top_20_percent_genes = RPSA_immediate_downstream_genes_with_scores[:top_20_percent_index]
+top_20_percent_gene_names = list(set([gene[0] for gene in top_20_percent_genes]))
+
+top_20_percent_downstream_gene_names = [gene for gene in top_20_percent_gene_names if gene in adata.var_names]  # Filter for genes present in the dataset
+adata.obs['RPSA_downstream_20_sum'] = adata[:, top_20_percent_downstream_gene_names].X.sum(axis=1)
+adata.obs['RPSA_downstream_20_avg'] = adata[:, top_20_percent_downstream_gene_names].X.mean(axis=1)
+adata.obs['RPSA_downstream_20_avg_log'] = np.log1p(adata.obs['RPSA_downstream_20_avg']) # log scaling for stronger visualization
+
+sc.pl.spatial(adata, color='RPSA_downstream_20_avg_log', title="Mean Expression of RPSA Downstream Genes", cmap="magma", spot_size=120, show=False,img_key=None)
+fig = plt.gcf()# Get the current figure and axis
+ax = plt.gca()
+ax.set_facecolor('black') # Set the background color to dark gray
+plt.savefig("/cluster/projects/schwartzgroup/vg/NEST_revision/RPSA_downstream_20_avg_log.png",dpi=300)
+
+
+########## For ITGB4
+# ITGB4 downstream genes
+ITGB4_immediate_downstream_genes_with_scores = PPI_matrix[PPI_matrix['source'] == 'ITGB4'][['target', 'experimental_score']].values.tolist()
+ITGB4_immediate_downstream_genes_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+top_20_percent_index = int(len(ITGB4_immediate_downstream_genes_with_scores) * 0.05)
+top_20_percent_genes = ITGB4_immediate_downstream_genes_with_scores[:top_20_percent_index]
+top_20_percent_gene_names = list(set([gene[0] for gene in top_20_percent_genes]))
+
+top_20_percent_downstream_gene_names = [gene for gene in top_20_percent_gene_names if gene in adata.var_names]  # Filter for genes present in the dataset
+adata.obs['ITGB4_downstream_20_sum'] = adata[:, top_20_percent_downstream_gene_names].X.sum(axis=1)
+adata.obs['ITGB4_downstream_20_avg'] = adata[:, top_20_percent_downstream_gene_names].X.mean(axis=1)
+adata.obs['ITGB4_downstream_20_avg_log'] = np.log1p(adata.obs['ITGB4_downstream_20_avg']) # log scaling for stronger visualization
+
+sc.pl.spatial(adata, color='ITGB4_downstream_20_avg_log', title="Mean Expression of ITGB4 Downstream Genes", cmap="magma", spot_size=120, show=False,img_key=None)
+fig = plt.gcf()# Get the current figure and axis
+ax = plt.gca()
+ax.set_facecolor('black') # Set the background color to dark gray
+plt.savefig("/cluster/projects/schwartzgroup/vg/NEST_revision/ITGB4_downstream_20_avg_log.png",dpi=300)
+
+
+########## For MET
+# MET downstream genes
+MET_immediate_downstream_genes_with_scores = PPI_matrix[PPI_matrix['source'] == 'MET'][['target', 'experimental_score']].values.tolist()
+MET_immediate_downstream_genes_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+top_20_percent_index = int(len(MET_immediate_downstream_genes_with_scores) * 0.05)
+top_20_percent_genes = MET_immediate_downstream_genes_with_scores[:top_20_percent_index]
+top_20_percent_gene_names = list(set([gene[0] for gene in top_20_percent_genes]))
+
+top_20_percent_downstream_gene_names = [gene for gene in top_20_percent_gene_names if gene in adata.var_names]  # Filter for genes present in the dataset
+adata.obs['MET_downstream_20_sum'] = adata[:, top_20_percent_downstream_gene_names].X.sum(axis=1)
+adata.obs['MET_downstream_20_avg'] = adata[:, top_20_percent_downstream_gene_names].X.mean(axis=1)
+adata.obs['MET_downstream_20_avg_log'] = np.log1p(adata.obs['MET_downstream_20_avg']) # log scaling for stronger visualization
+
+sc.pl.spatial(adata, color='MET_downstream_20_avg_log', title="Mean Expression of MET Downstream Genes", cmap="magma", spot_size=120, show=False,img_key=None)
+fig = plt.gcf()# Get the current figure and axis
+ax = plt.gca()
+ax.set_facecolor('black') # Set the background color to dark gray
+plt.savefig("/cluster/projects/schwartzgroup/vg/NEST_revision/MET_downstream_20_avg_log.png",dpi=300)

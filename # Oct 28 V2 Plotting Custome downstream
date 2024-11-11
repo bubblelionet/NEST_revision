@@ -1,0 +1,70 @@
+# Plotting LRP1 downstream genes and tf genes
+# Run this on H4H
+# Using Deisha's database
+
+import pandas as pd
+import json
+import scanpy as sc
+import anndata
+from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np 
+
+def plot_downstream_genes(gene_of_interest, adata_path, positions_path, save_path, plot_title="Downstream Genes Expression"):
+    # Load PPI and TF matrices
+    PPI_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/signaling_network_human_21122021_stringdb_scored.csv')
+    
+    # Get immediate downstream genes for the gene of interest, sorted by experimental score
+    downstream_genes_with_scores = PPI_matrix[PPI_matrix['source'] == gene_of_interest][['target', 'experimental_score']].values.tolist()
+    downstream_genes_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+    # Take the top 20% of the downstream genes
+    top_20_percent_index = int(len(downstream_genes_with_scores) * 0.2)
+    top_20_percent_genes = downstream_genes_with_scores[:top_20_percent_index]
+    top_20_percent_gene_names = list(set([gene[0] for gene in top_20_percent_genes]))
+
+    # Load AnnData object
+    adata = sc.read_10x_mtx(adata_path, var_names='gene_symbols', make_unique=True)
+    
+    sc.pp.normalize_total(adata, target_sum=1e4)
+    sc.pp.log1p(adata)
+
+    # Load spatial metadata
+    positions = pd.read_csv(positions_path, header=None)
+    positions.columns = ["barcode", "col1", "col2", "col3", "x", "y"]
+    positions.set_index("barcode", inplace=True)
+    positions = positions.reindex(adata.obs_names)
+    adata.obsm['spatial'] = positions[["x", "y"]].values
+    adata.obsm['spatial'] = adata.obsm['spatial'][:, [1, 0]]  # Flip x and y
+
+    # Filter downstream genes present in the dataset
+    top_20_percent_gene_names = [gene for gene in top_20_percent_gene_names if gene in adata.var_names]
+
+    # Calculate sum, mean, and log of the downstream genes
+    adata.obs[f'{gene_of_interest}_downstream_sum'] = adata[:, top_20_percent_gene_names].X.sum(axis=1)
+    adata.obs[f'{gene_of_interest}_downstream_avg'] = adata[:, top_20_percent_gene_names].X.mean(axis=1)
+    adata.obs[f'{gene_of_interest}_downstream_avg_log'] = np.log1p(adata.obs[f'{gene_of_interest}_downstream_avg'])
+
+    # Plot the log-transformed mean expression
+    sc.pl.spatial(adata, color=f'{gene_of_interest}_downstream_avg_log', title=f"{plot_title} ({gene_of_interest})", cmap="magma", ncols=5, spot_size=100, size=1.5, show=False, img_key=None)
+
+    # Get the current figure and axis
+    fig = plt.gcf()
+    ax = plt.gca()
+
+    # Set the background color to dark gray
+    ax.set_facecolor('black')
+
+    # Save the figure
+    plt.savefig(save_path, dpi=300)
+
+# Example usage
+plot_downstream_genes(
+    gene_of_interest="LRP1",  # Change this to the gene of interest
+    adata_path='/cluster/projects/schwartzgroup/fatema/data/LUAD/LUAD_GSM5702473_TD1',
+    positions_path='/cluster/projects/schwartzgroup/fatema/data/LUAD/LUAD_GSM5702473_TD1/GSM5702473_TD1_tissue_positions_list.csv',
+    save_path='/cluster/projects/schwartzgroup/vg/NEST_revision/LRP1_downstream_genes.png',
+    plot_title="Mean Expression of LRP1 Downstream Genes"  # Customize the plot title if needed
+)
+
+

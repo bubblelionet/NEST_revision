@@ -1,0 +1,80 @@
+import pandas as pd
+import altair as alt
+import gseapy as gp
+import re
+
+# Function to clean gene set terms
+def clean_term(term):
+    # Remove text before the first underscore and replace remaining underscores with spaces
+    return re.sub(r'^[^_]*_', '', term).replace('_', ' ')
+
+# Function to perform ssGSEA and prepare data for plotting
+def run_ssgsea_and_prepare_data(ranked_list, gene_sets, component_label):
+    # Run ssGSEA
+    ssgsea_result = gp.ssgsea(
+        data=ranked_list.to_frame(), 
+        gene_sets=gene_sets, 
+        outdir=None,  # Not saving results to a folder
+        min_size=15,
+        max_size=500, 
+        permutation_num=100,  # ssGSEA doesn’t require permutations
+        no_plot=True
+    )
+    
+    # Clean and sort results
+    ssgsea_result.res2d['Term'] = ssgsea_result.res2d['Term'].apply(clean_term)
+    ssgsea_result.res2d = ssgsea_result.res2d.sort_values(by='NES', ascending=False)
+    ssgsea_result.res2d['Component'] = component_label  # Add component label
+    
+    return ssgsea_result.res2d[['Term', 'NES', 'FDR q-val', 'Component']].head(20)  # Select top 20 terms
+
+# Prepare gene sets
+file_names = [
+    '/cluster/projects/schwartzgroup/vg/NEST_revision/GSEA/h.all.v2024.1.Hs.symbols.gmt',
+    '/cluster/projects/schwartzgroup/vg/NEST_revision/GSEA/C2.CP.v2024.1.Hs.symbols.gmt', 
+    '/cluster/projects/schwartzgroup/vg/NEST_revision/GSEA/c6.all.v2024.1.Hs.symbols.gmt'
+]
+combined_gene_sets = {}
+for gmt_file in file_names:
+    gene_sets = gp.parser.read_gmt(gmt_file)
+    combined_gene_sets.update(gene_sets)
+
+# Load and prepare ranked lists
+components = {'5': 'Component 5', '9': 'Component 9', '14': 'Component 14'}
+data_frames = []
+for comp, label in components.items():
+    logFC_df = pd.DataFrame({
+        'gene': adata.uns['rank_genes_groups']['names'][comp],
+        'logFC': adata.uns['rank_genes_groups']['logfoldchanges'][comp]
+    })
+    ranked_list = logFC_df.set_index('gene')['logFC'].sort_values(ascending=False)
+    component_gsea_data = run_ssgsea_and_prepare_data(ranked_list, combined_gene_sets, label)
+    data_frames.append(component_gsea_data)
+
+# Combine data for Altair plotting
+plot_data = pd.concat(data_frames)
+
+# Altair dot plot
+def create_altair_gsea_dotplot(data, output_file):
+    dotplot = (
+        alt.Chart(data)
+        .mark_circle()
+        .encode(
+            x=alt.X('Component:N', title='Component'),
+            y=alt.Y('Term:N', title='Gene Set', sort='-x'),
+            size=alt.Size('NES:Q', scale=alt.Scale(range=[0, 200]), title='Normalized Enrichment Score'),
+            color=alt.Color('FDR q-val:Q', scale=alt.Scale(scheme='yellow', reverse=True), title='FDR q-value'),
+            tooltip=['Term', 'NES', 'FDR q-val']
+        )
+        .properties(
+            title='GSEA Dot Plot for Components',
+            width=400,
+            height=600
+        )
+    )
+
+    # Save as an HTML file for interactivity
+    dotplot.save(output_file)
+
+# Generate and save the plot
+create_altair_gsea_dotplot(plot_data, "/cluster/projects/schwartzgroup/vg/NEST_revision/gsea_dotplot_altair.html")

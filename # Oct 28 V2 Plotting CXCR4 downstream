@@ -1,0 +1,83 @@
+# Plotting CXCR4 downstream genes and tf genes
+# Run thison H4H
+# Using Deisha's database
+
+import pandas as pd
+import json
+import scanpy as sc
+import anndata
+from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np 
+
+PPI_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/signaling_network_human_21122021_stringdb_scored.csv')
+TF_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/dorothea_filtered.csv')
+
+########## For PPI, we want to see the downstream genes of CXCR4, and there's only three
+# CXCR4 downstream genes, take the top 20% of the downstream genes
+CXCR4_immediate_downstream_genes_with_scores = PPI_matrix[PPI_matrix['source'] == 'CXCR4'][['target', 'experimental_score']].values.tolist()
+CXCR4_immediate_downstream_genes_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+top_20_percent_index = int(len(CXCR4_immediate_downstream_genes_with_scores) * 0.2)
+top_20_percent_genes = CXCR4_immediate_downstream_genes_with_scores[:top_20_percent_index]
+top_20_percent_gene_names = list(set([gene[0] for gene in top_20_percent_genes]))
+
+
+# Load in adata object, see Aug 25 Plotting Lymph Visium data script
+# Account for duplicates, see Aug 26 script
+duplicate_genes = adata.var_names[adata.var_names.duplicated()]
+adata.var_names = pd.Index([f"{gene}_{i}" if gene in duplicate_genes else gene
+                            for i, gene in enumerate(adata.var_names)])
+sc.pp.log1p(adata)
+# Load in adata object, see Aug 25 Plotting Lymph Visium data script
+CXCR4_immediate_downstream_genes = [gene for gene in CXCR4_immediate_downstream_genes if gene in adata.var_names]  # Filter for genes present in the dataset
+adata.obs['CXCR4_immediate_downstream_genes'] = adata[:, CXCR4_immediate_downstream_genes].X.sum(axis=1)
+adata.obs['CXCR4_immediate_downstream_genes'] = adata[:, CXCR4_immediate_downstream_genes].X.mean(axis=1)
+top_20_percent_downstream_gene_names = [gene for gene in top_20_percent_gene_names if gene in adata.var_names]  # Filter for genes present in the dataset
+adata.obs['CXCR4_downstream_20_sum'] = adata[:, top_20_percent_downstream_gene_names].X.sum(axis=1)
+adata.obs['CXCR4_downstream_20_avg'] = adata[:, top_20_percent_downstream_gene_names].X.mean(axis=1)
+adata.obs['CXCR4_downstream_20_avg_log'] = np.log1p(adata.obs['CXCR4_downstream_20_avg']) # log scaling for stronger visualization
+
+
+
+# Plot the summed/mean expression of CXCR4 downstream genes
+# sc.pl.spatial(adata, color='CXCR4_downstream_sum', title="Summed Expression of CXCR4 Downstream Genes", cmap="magma", show=False,img_key=None)
+sc.pl.spatial(adata, color='CXCR4_downstream_20_avg_log', title="Mean Expression of CXCR4 Downstream Genes", cmap="magma", show=False,img_key=None)
+fig = plt.gcf()# Get the current figure and axis
+ax = plt.gca()
+ax.set_facecolor('black') # Set the background color to dark gray
+plt.savefig("/cluster/projects/schwartzgroup/vg/NEST_revision/new_fig.png",dpi=300)
+
+# ##### T cell zone focused, see Sept 5 script ##########
+# # Load the annotation file
+# annotations = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Lymph_annotations/V1_Human_Lymph_Node_spatial_annotation.csv')
+# annotations = annotations.set_index('Barcode')
+# adata.obs['cell_type'] = adata.obs_names.map(annotations['Type'])
+# tcell_adata = adata[adata.obs['cell_type'] == 'T-cell']
+# sc.pl.spatial(tcell_adata, color='CXCR4_downstream_avg', title="Averaged Expression of CXCR4 Downstream Genes in T-cell Zone", cmap="magma") # Plot the T-cells only
+# plt.savefig("/cluster/projects/schwartzgroup/vg/NEST_revision/new_fig.png",dpi=300)
+
+# ##### Using the Dorthea database, plot downstream TFs of CXCR4
+# # Identify transcription factors targeted by CXCR4 by going through every gene on the downstream_genes and checking if it's a TF
+# # CXCR4 downstream TFs
+# CXCR4_downstream_tfs = []
+# for gene in downstream_genes:
+#     if gene in TF_matrix['source'].tolist():
+#         CXCR4_downstream_tfs.append(gene)
+# # Load in adata object, see Aug 25 Plotting Lymph Visium data script
+# CXCR4_downstream_tfs = [gene for gene in CXCR4_downstream_tfs if gene in adata.var_names]  # Filter for genes present in the dataset
+# adata.obs['CXCR4_downstream_tfs_sum'] = adata[:, CXCR4_downstream_tfs].X.sum(axis=1)
+# adata.obs['CXCR4_downstream_tfs_avg'] = adata[:, CXCR4_downstream_tfs].X.mean(axis=1)
+
+# # Plot the summed/mean expression of CXCR4 downstream TFs
+# sc.pl.spatial(adata, color='CXCR4_downstream_tfs_sum', title="Summed Expression of CXCR4 Downstream TFs", cmap="magma", show=False,img_key=None)
+# fig = plt.gcf()# Get the current figure and axis
+# ax = plt.gca()
+# ax.set_facecolor('darkgray') # Set the background color to dark gray
+# plt.savefig("/cluster/projects/schwartzgroup/vg/NEST_revision/CXCR4_downstream_tfs_sum.png",dpi=300)
+
+# sc.pl.spatial(adata, color='CXCR4_downstream_tfs_avg', title="Mean Expression of CXCR4 Downstream TFs", cmap="magma", show=False,img_key=None)
+# fig = plt.gcf()# Get the current figure and axis
+# ax = plt.gca()
+# ax.set_facecolor('darkgray') # Set the background color to dark gray
+# plt.savefig("/cluster/projects/schwartzgroup/vg/NEST_revision/CXCR4_downstream_tfs_avg.png",dpi=300)

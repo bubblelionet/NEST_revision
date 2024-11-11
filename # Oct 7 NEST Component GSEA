@@ -1,0 +1,153 @@
+# Continuation of Oct 6 with NEST components
+
+
+import pandas as pd
+import json
+import scanpy as sc
+import anndata
+from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np
+
+import gseapy as gp
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+from gseapy import dotplot
+import re
+
+# Load msigdb gene set
+# gene_set = gp.parser.read_gmt('/cluster/projects/schwartzgroup/vg/NEST_revision/GSEA/h.all.v2024.1.Hs.symbols.gmt')
+file_names = ['/cluster/projects/schwartzgroup/vg/NEST_revision/GSEA/h.all.v2024.1.Hs.symbols.gmt',
+              '/cluster/projects/schwartzgroup/vg/NEST_revision/GSEA/C2.CP.v2024.1.Hs.symbols.gmt', 
+              '/cluster/projects/schwartzgroup/vg/NEST_revision/GSEA/c6.all.v2024.1.Hs.symbols.gmt']
+            #   '/cluster/projects/schwartzgroup/vg/NEST_revision/GSEA/c7.all.v2024.1.Hs.symbols.gmt']
+combined_gene_sets = {}
+for gmt_file in file_names:
+    gene_sets = gp.parser.read_gmt(gmt_file)
+    combined_gene_sets.update(gene_sets)  # Add gene sets from each file to the combined dictionary
+
+# Step 1: Create a ranked list for each component
+# Extract differential expression results for a specific component
+logFC_component_5 = pd.DataFrame({
+    'gene': adata.uns['rank_genes_groups']['names']['5'],
+    'logFC': adata.uns['rank_genes_groups']['logfoldchanges']['5']
+})
+# Create a ranked list based on logFC
+ranked_list_5 = logFC_component_5.set_index('gene')['logFC'].sort_values(ascending=False)
+
+# Step 2: Perform GSEA for Component 5
+# enr_5 = gp.prerank(rnk=ranked_list_5, gene_sets=gene_set, outdir='/cluster/projects/schwartzgroup/vg/NEST_revision/component_5_gsea', min_size=15, max_size=500, permutation_num=1000)
+# perform ssgsea
+ssgsea_result = gp.ssgsea(data=ranked_list_5.to_frame(), 
+                          gene_sets=combined_gene_sets, 
+                          outdir=None,  # Not saving results to a folder
+                          min_size=15,
+                          max_size=500, 
+                          permutation_num=100, # ssGSEA doesn't need permutations
+                          no_plot=True)
+ssgsea_result.res2d = ssgsea_result.res2d.sort_values(by='NES', ascending=False)
+# ssgsea_result.res2d['Term'] = ssgsea_result.res2d['Term'].str.replace(r'^[^_]*_', '', regex=True)
+def clean_term(term):
+    # Remove text before the first underscore and replace remaining underscores with spaces
+    return re.sub(r'^[^_]*_', '', term).replace('_', ' ')
+
+ssgsea_result.res2d['Term'] = ssgsea_result.res2d['Term'].apply(clean_term)
+ssgsea_result.res2d.to_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/component_5_gsea.csv')
+# use regular expression to remove the prefix "*_" of the gene set names
+# plot
+ssgsea_result = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/component_5_gsea.csv')
+plot = dotplot(ssgsea_result,
+              column="FDR q-val",
+            #   x='Gene_set', # set x axis, so you could do a multi-sample/library comparsion
+              size=5,
+              top_term=20,
+              figsize=(6,10),
+              title = "ssGSEA of Component 5",
+              cmap=plt.cm.viridis,
+              xticklabels_rot=45, # rotate xtick labels
+              show_ring=False, # set to False to revmove outer ring
+              marker='o',
+              ofname = '/cluster/projects/schwartzgroup/vg/NEST_revision/component_5_top20.png'
+             )
+
+
+# Step 3: Repeat for other components
+# Component 9
+logFC_component_9 = pd.DataFrame({
+    'gene': adata.uns['rank_genes_groups']['names']['9'],
+    'logFC': adata.uns['rank_genes_groups']['logfoldchanges']['9']
+})
+
+ranked_list_9 = logFC_component_9.set_index('gene')['logFC'].sort_values(ascending=False)
+
+ssgsea_result = gp.ssgsea(data=ranked_list_9.to_frame(), 
+                          gene_sets=combined_gene_sets, 
+                          outdir=None,  # Not saving results to a folder
+                          min_size=15,
+                          max_size=500, 
+                          permutation_num=100, # ssGSEA doesn't need permutations
+                          no_plot=True)
+ssgsea_result.res2d = ssgsea_result.res2d.sort_values(by='NES', ascending=False)
+# ssgsea_result.res2d['Term'] = ssgsea_result.res2d['Term'].str.replace(r'^[^_]*_', '', regex=True)
+def clean_term(term):
+    # Remove text before the first underscore and replace remaining underscores with spaces
+    return re.sub(r'^[^_]*_', '', term).replace('_', ' ')
+
+ssgsea_result.res2d['Term'] = ssgsea_result.res2d['Term'].apply(clean_term)
+ssgsea_result.res2d.to_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/component_9_gsea.csv')
+# use regular expression to remove the prefix "*_" of the gene set names
+# plot
+ssgsea_result = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/component_9_gsea.csv')
+plot = dotplot(ssgsea_result,
+              column="FDR q-val",
+            #   x='Gene_set', # set x axis, so you could do a multi-sample/library comparsion
+              size=5,
+              top_term=20,
+              figsize=(6,10),
+              title = "ssGSEA of Component 9",
+              cmap=plt.cm.viridis,
+              xticklabels_rot=45, # rotate xtick labels
+              show_ring=False, # set to False to revmove outer ring
+              marker='o',
+              ofname = '/cluster/projects/schwartzgroup/vg/NEST_revision/component_9_top20.png'
+             )
+
+# Component 14
+logFC_component_14 = pd.DataFrame({
+    'gene': adata.uns['rank_genes_groups']['names']['14'],
+    'logFC': adata.uns['rank_genes_groups']['logfoldchanges']['14']
+})
+
+ranked_list_14 = logFC_component_14.set_index('gene')['logFC'].sort_values(ascending=False)
+
+ssgsea_result = gp.ssgsea(data=ranked_list_14.to_frame(), 
+                          gene_sets=combined_gene_sets, 
+                          outdir=None,  # Not saving results to a folder
+                          min_size=15,
+                          max_size=500, 
+                          permutation_num=100, # ssGSEA doesn't need permutations
+                          no_plot=True)
+ssgsea_result.res2d = ssgsea_result.res2d.sort_values(by='NES', ascending=False)
+# ssgsea_result.res2d['Term'] = ssgsea_result.res2d['Term'].str.replace(r'^[^_]*_', '', regex=True)
+def clean_term(term):
+    # Remove text before the first underscore and replace remaining underscores with spaces
+    return re.sub(r'^[^_]*_', '', term).replace('_', ' ')
+
+ssgsea_result.res2d['Term'] = ssgsea_result.res2d['Term'].apply(clean_term)
+ssgsea_result.res2d.to_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/component_14_gsea.csv')
+# use regular expression to remove the prefix "*_" of the gene set names
+# plot
+ssgsea_result = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/component_14_gsea.csv')
+plot = dotplot(ssgsea_result,
+              column="FDR q-val",
+              size=5,
+              top_term=20,
+              figsize=(6,10),
+              title = "ssGSEA of Component 14",
+              cmap=plt.cm.viridis,
+              xticklabels_rot=45, # rotate xtick labels
+              show_ring=False, # set to False to revmove outer ring
+              marker='o',
+              ofname = '/cluster/projects/schwartzgroup/vg/NEST_revision/component_14_top20.png'
+             )

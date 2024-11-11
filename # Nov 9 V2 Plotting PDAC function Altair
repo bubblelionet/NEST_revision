@@ -1,0 +1,91 @@
+import pandas as pd
+import scanpy as sc
+import numpy as np
+import altair as alt
+import sys
+sys.path.append("/cluster/projects/schwartzgroup/vg/altair-themes")
+import altairThemes
+
+alt.themes.register("publishTheme", altairThemes.publishTheme)
+alt.themes.enable("publishTheme")
+
+# Load PPI matrix and expression data
+PPI_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/signaling_network_human_21122021_stringdb_scored.csv')
+adata_path = '/cluster/projects/schwartzgroup/vg/PDAC_140694_outs/filtered_feature_bc_matrix/'
+adata = sc.read_10x_mtx(adata_path, var_names='gene_symbols', make_unique=True)
+sc.pp.normalize_total(adata, target_sum=1e4)
+sc.pp.log1p(adata)
+
+# Load positions
+positions = pd.read_csv("/cluster/projects/schwartzgroup/vg/PDAC_140694_outs/spatial/tissue_positions_list.csv", header=None)
+positions.columns = ["barcode", "col1", "col2", "col3", "x", "y"]
+positions.set_index("barcode", inplace=True)
+positions = positions.reindex(adata.obs_names)
+adata.obsm['spatial'] = positions[["x", "y"]].values
+adata.obsm['spatial'] = adata.obsm['spatial'][:, [1, 0]]
+
+adata.obs['x'] = adata.obsm['spatial'][:, 0]
+adata.obs['y'] = adata.obsm['spatial'][:, 1]
+
+# Handle duplicate gene names
+duplicate_genes = adata.var_names[adata.var_names.duplicated()]
+adata.var_names = pd.Index([f"{gene}_{i}" if gene in duplicate_genes else gene
+                            for i, gene in enumerate(adata.var_names)])
+
+def analyze_and_plot_gene_expression(gene_name, output_file):
+    # Get immediate downstream genes
+    downstream_genes_with_scores = PPI_matrix[PPI_matrix['source'] == gene_name][['target', 'experimental_score']].values.tolist()
+    downstream_genes_with_scores.sort(key=lambda x: x[1], reverse=True)
+    
+    # Select the top 20% downstream genes by score
+    top_20_percent_index = int(len(downstream_genes_with_scores) * 0.2)
+    top_20_percent_genes = downstream_genes_with_scores[:top_20_percent_index]
+    top_20_percent_gene_names = list(set([gene[0] for gene in top_20_percent_genes if gene[0] in adata.var_names]))
+    
+    # Calculate mean expression and log transformation
+    adata.obs[f'{gene_name}_downstream_20_avg'] = adata[:, top_20_percent_gene_names].X.mean(axis=1)
+    adata.obs[f'{gene_name}_downstream_20_avg_log'] = np.log1p(adata[:, top_20_percent_gene_names].X.mean(axis=1).A1)
+
+    # Prepare data for plotting
+    plot_data = adata.obs[['x', 'y', f'{gene_name}_downstream_20_avg_log']].copy()
+    plot_data['y'] = -plot_data['y']  # Flip y-coordinates for correct orientation
+
+    # Create plot
+    scatter_plot = (
+        alt.Chart(plot_data)
+        .mark_point(filled=True,size=16) # for 140694:16
+        .encode(
+            x=alt.X('x:Q', title=None, scale=alt.Scale(zero=False), axis=alt.Axis(grid=False, ticks=False, labels=False, domain=False)),
+            y=alt.Y('y:Q', title=None, scale=alt.Scale(zero=False), axis=alt.Axis(grid=False, ticks=False, labels=False, domain=False)),
+            color=alt.Color(f'{gene_name}_downstream_20_avg_log:Q', scale=alt.Scale(scheme='magma'), title="Expression Level"),
+            tooltip=[f'{gene_name}_downstream_20_avg_log']
+        )
+        .properties(
+            width=210, # for 64630:250, for 140694:210
+            height=210, 
+            title=f"Mean Expression of Top 20% {gene_name} Downstream Genes"
+        )
+        .configure_view(
+            stroke=None,
+            strokeWidth=0
+        )
+    )
+
+    # scatter_plot = alt.Chart(plot_data).mark_point(filled=True).encode(
+    #         x=alt.X('x:Q', axis=alt.Axis(grid=False, ticks=False, labels=False, domain=False), scale=alt.Scale(zero=False)),
+    #         y=alt.Y('y:Q', axis=alt.Axis(grid=False, ticks=False, labels=False, domain=False), scale=alt.Scale(zero=False)),
+    #         color=alt.Color(f'{gene_name}_downstream_20_avg_expression:Q', scale=alt.Scale(scheme='magma'))
+    #     ).properties(
+    #         width=250,
+    #         height=250,
+    #         title=f"Mean Expression of Top 20% {gene_name} Downstream Genes"
+    #     ).configure_view(
+    #         stroke=None,
+    #         strokeWidth=0
+    #     )
+
+    # Save as HTML
+    scatter_plot.save(output_file)
+
+# Example usage for gene of interest
+analyze_and_plot_gene_expression("ITGB4", "/cluster/projects/schwartzgroup/vg/NEST_revision/ITGB4_downstream_20_avg_log_spatial_expression_altair_log.html")

@@ -1,0 +1,85 @@
+import pandas as pd
+import json
+import scanpy as sc
+import anndata
+from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np
+import altair as alt
+import sys
+sys.path.append("/cluster/projects/schwartzgroup/vg/altair-themes")
+if True:  # In order to bypass isort when saving
+    import altairThemes
+
+alt.themes.register("publishTheme", altairThemes.publishTheme)
+alt.themes.enable("publishTheme")
+
+PPI_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/signaling_network_human_21122021_stringdb_scored.csv')
+TF_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/dorothea_filtered.csv')
+
+adata_path='/cluster/projects/schwartzgroup/vg/PDAC_140694_outs/filtered_feature_bc_matrix/'
+adata = sc.read_10x_mtx(adata_path, var_names='gene_symbols', make_unique=True)
+sc.pp.normalize_total(adata, target_sum=1e4)
+sc.pp.log1p(adata)
+
+positions = pd.read_csv("/cluster/projects/schwartzgroup/vg/PDAC_140694_outs/spatial/tissue_positions_list.csv", header=None)
+positions.columns = ["barcode", "col1", "col2", "col3", "x", "y"]  # Rename columns as needed
+positions.set_index("barcode", inplace=True)
+positions = positions.reindex(adata.obs_names)
+adata.obsm['spatial'] = positions[["x", "y"]].values
+# adata.obsm['spatial'] = adata.obsm['spatial'][:, [1, 0]] # Flip the x and y coordinates to match the NEST paper plotting
+
+# # RPSA downstream genes
+RPSA_immediate_downstream_genes_with_scores = PPI_matrix[PPI_matrix['source'] == 'RPSA'][['target', 'experimental_score']].values.tolist()
+RPSA_immediate_downstream_genes_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+top_20_percent_index = int(len(RPSA_immediate_downstream_genes_with_scores) * 0.2)
+top_20_percent_genes = RPSA_immediate_downstream_genes_with_scores[:top_20_percent_index]
+top_20_percent_gene_names = list(set([gene[0] for gene in top_20_percent_genes]))
+
+
+duplicate_genes = adata.var_names[adata.var_names.duplicated()]
+adata.var_names = pd.Index([f"{gene}_{i}" if gene in duplicate_genes else gene
+                            for i, gene in enumerate(adata.var_names)])
+
+top_20_percent_gene_names = [gene for gene in top_20_percent_gene_names if gene in adata.var_names]  # Filter for genes present in the dataset
+adata.obs['RPSA_downstream_20_avg'] = adata[:, top_20_percent_gene_names].X.mean(axis=1)
+
+adata.obs['x'] = adata.obsm['spatial'][:, 0]  # Assuming 'spatial' contains x-coordinates
+adata.obs['y'] = adata.obsm['spatial'][:, 1]  # Assuming 'spatial' contains y-coordinates
+
+adata.obs['RPSA_downstream_20_avg_log'] = np.log1p(adata[:, top_20_percent_gene_names].X.mean(axis=1).A1)
+
+# Convert to a DataFrame for Altair
+plot_data = adata.obs[['x', 'y', 'RPSA_downstream_20_avg_log']].copy()
+
+def create_spatial_expression_plot(data, title, output_file):
+    data['y'] = -data['y'] # Transform y-coordinates to flip plot
+
+    scatter_plot = (
+        alt.Chart(data)
+        .mark_circle(size=14)
+        .encode(
+            x=alt.X('x:Q', title=None, axis=alt.Axis(grid=False, ticks=False,labels=False,domain=False)),
+            y=alt.Y('y:Q', title=None, axis=alt.Axis(grid=False, ticks=False,labels=False,domain=False)),
+            color=alt.Color('RPSA_downstream_20_avg_log:Q', scale=alt.Scale(scheme='magma'), title="Expression Level"),
+            tooltip=['RPSA_downstream_20_avg_log']
+        )
+        .properties(
+            width=250,
+            height=250,
+            title=title
+        )
+        .configure_view(
+            stroke=None,  # Remove the main outline stroke
+            strokeWidth=0  # Set the stroke width to zero to ensure complete removal of outlines
+        )
+    )
+
+    # Save as HTML file
+    scatter_plot.save(output_file)
+
+
+# Define output file path and title
+output_file = "/cluster/projects/schwartzgroup/vg/NEST_revision/RPSA_downstream_20_avg_log_spatial_expression_altair_log.html"
+create_spatial_expression_plot(plot_data, "Mean Expression of Top 20% RPSA Downstream Genes", output_file)

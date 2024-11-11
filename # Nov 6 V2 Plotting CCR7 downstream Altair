@@ -1,0 +1,93 @@
+import pandas as pd
+import json
+import scanpy as sc
+import anndata
+from PIL import Image
+import matplotlib.pyplot as plt
+import numpy as np
+import altair as alt
+sys.path.append("/cluster/projects/schwartzgroup/vg/altair-themes")
+if True:  # In order to bypass isort when saving
+    import altairThemes
+
+alt.themes.register("publishTheme", altairThemes.publishTheme)
+alt.themes.enable("publishTheme")
+
+PPI_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/signaling_network_human_21122021_stringdb_scored.csv')
+TF_matrix = pd.read_csv('/cluster/projects/schwartzgroup/vg/NEST_revision/Deisha_Database/dorothea_filtered.csv')
+
+########## For PPI, we want to see the downstream genes of CCR7, and there's only three
+# CCR7 downstream genes
+CCR7_immediate_downstream_genes = PPI_matrix[PPI_matrix['source'] == 'CCR7']['target'].tolist()
+# for each gene, get the downstream genes, sorted by the experimental score column
+downstream_genes_with_scores = []
+for gene in CCR7_immediate_downstream_genes:
+    gene_targets = PPI_matrix[PPI_matrix['source'] == gene][['target', 'experimental_score']]
+    downstream_genes_with_scores.extend(gene_targets.values.tolist())
+
+downstream_genes_with_scores.sort(key=lambda x: x[1], reverse=True)
+
+top_20_percent_index = int(len(downstream_genes_with_scores) * 0.2)
+top_20_percent_genes = downstream_genes_with_scores[:top_20_percent_index]
+top_20_percent_gene_names = list(set([gene[0] for gene in top_20_percent_genes]))
+
+combined_gene_names = list(set(top_20_percent_gene_names + CCR7_immediate_downstream_genes))
+
+
+# Load in adata object, see Aug 25 Plotting Lymph Visium data script
+# Account for duplicates, see Aug 26 script
+duplicate_genes = adata.var_names[adata.var_names.duplicated()]
+adata.var_names = pd.Index([f"{gene}_{i}" if gene in duplicate_genes else gene
+                            for i, gene in enumerate(adata.var_names)])
+
+# Load in adata object, see Aug 25 Plotting Lymph Visium data script
+# CCR7_immediate_downstream_genes = [gene for gene in CCR7_immediate_downstream_genes if gene in adata.var_names]  # Filter for genes present in the dataset
+# adata.obs['CCR7_immediate_downstream_sum'] = adata[:, CCR7_immediate_downstream_genes].X.sum(axis=1)
+# adata.obs['CCR7_immediate_downstream_avg'] = adata[:, CCR7_immediate_downstream_genes].X.mean(axis=1)
+# downstream_genes = [gene for gene in downstream_genes if gene in adata.var_names]  # Filter for genes present in the dataset
+# adata.obs['CCR7_downstream_sum'] = adata[:, downstream_genes].X.sum(axis=1)
+# adata.obs['CCR7_downstream_avg'] = adata[:, downstream_genes].X.mean(axis=1)
+combined_gene_names = [gene for gene in combined_gene_names if gene in adata.var_names]  # Filter for genes present in the dataset
+adata.obs['CCR7_downstream_20_avg'] = adata[:, combined_gene_names].X.mean(axis=1)
+# adata.obs['CCR7_downstream_20_avg_log'] = np.log1p(adata.obs['CCR7_downstream_20_avg']) # log scaling for stronger visualization
+
+# Extract spatial coordinates and expression levels for plotting
+adata.obs['x'] = adata.obsm['spatial'][:, 0]  # Assuming 'spatial' contains x-coordinates
+adata.obs['y'] = adata.obsm['spatial'][:, 1]  # Assuming 'spatial' contains y-coordinates
+
+# Add the expression data for the CCR7 downstream genes
+adata.obs['CCR7_downstream_20_avg_log'] = np.log1p(adata[:, combined_gene_names].X.mean(axis=1).A1)
+
+# Convert to a DataFrame for Altair
+plot_data = adata.obs[['x', 'y', 'CCR7_downstream_20_avg_log']].copy()
+
+def create_spatial_expression_plot(data, title, output_file):
+    data['y'] = -data['y'] # Transform y-coordinates to flip plot
+
+    scatter_plot = (
+        alt.Chart(data)
+        .mark_circle(size=14)
+        .encode(
+            x=alt.X('x:Q', title=None, axis=alt.Axis(grid=False, ticks=False,labels=False,domain=False)),
+            y=alt.Y('y:Q', title=None, axis=alt.Axis(grid=False, ticks=False,labels=False,domain=False)),
+            color=alt.Color('CCR7_downstream_20_avg_log:Q', scale=alt.Scale(scheme='magma'), title="Expression Level"),
+            tooltip=['CCR7_downstream_20_avg_log']
+        )
+        .properties(
+            width=250,
+            height=250,
+            title=title
+        )
+        .configure_view(
+            stroke=None,  # Remove the main outline stroke
+            strokeWidth=0  # Set the stroke width to zero to ensure complete removal of outlines
+        )
+    )
+
+    # Save as HTML file
+    scatter_plot.save(output_file)
+
+
+# Define output file path and title
+output_file = "/cluster/projects/schwartzgroup/vg/NEST_revision/CCR7_downstream_20p_spatial_expression_altair_log.html"
+create_spatial_expression_plot(plot_data, "Mean Expression of Top 20% CCR7 Downstream Genes", output_file)
